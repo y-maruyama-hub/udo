@@ -1,12 +1,15 @@
+import os
+import argparse
 import cv2
 from flask import Flask, render_template, Response,request,jsonify
+from dotenv import load_dotenv
 import imcut
-from mycam import MyCamera
+from mitsuba.mycam import MyCamera
 
 cutsize=(200,150)
 allsize=(640,480)
 
-camsrv="http://192.168.11.242:5000/feed"
+#camsrv="http://192.168.11.242:5000/feed"
 
 lastframe = None
 
@@ -69,6 +72,16 @@ def image():
 
 if __name__ == '__main__':
 
-    cam=MyCamera(camsrv)
+    parser = argparse.ArgumentParser()
 
-    app.run(host='0.0.0.0', debug=False,threaded=True)
+    parser.add_argument("-p","--port",type=int,default=5000)
+
+    args = parser.parse_args()
+
+    myport=int(args.port)
+
+    load_dotenv()
+
+    cam=MyCamera(os.getenv("CAMERA_SRV"))
+
+    app.run(host='0.0.0.0', debug=False,threaded=True,port=myport)
