@@ -3,15 +3,23 @@ import argparse
 import cv2
 from flask import Flask, render_template, Response,request,jsonify
 from dotenv import load_dotenv
+import urllib.request
+import numpy as np
+import json
+import time
+
 import imcut
 from mitsuba.mycam import MyCamera
 
 cutsize=(200,150)
 allsize=(640,480)
 
+#url="http://localhost:5000"
 #camsrv="http://192.168.11.242:5000/feed"
 
-lastframe = None
+bgtimeout = 180
+bgtime = 0
+bg = None
 
 app = Flask(__name__)
 app.config["JSON_AS_ASCII"] = False
@@ -19,17 +27,20 @@ app.config["JSON_AS_ASCII"] = False
 
 @app.route("/image")
 def image():
+    global bgtime
+    global bg
 
     frame=cam.getframe()
 
     if frame is None : return Response(status=404)
 
+    if time.time() - bgtime > bgtimeout : bg=None
 
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-    bg = lastframe
-
-    if bg is None : bg=gray
+    if bg is None :
+        bgtime = time.time()
+        bg = gray
 
     frame_diff = cv2.absdiff(bg,gray)
 
@@ -61,13 +72,35 @@ def image():
 
                 color=(0, 255, 0)
 
-                cv2.rectangle(frame,(xx[0],yy[0]),(xx[1],yy[1]),color, 1)
+                if predict(expimg)>0.7 : color=(255, 0, 0)
 
-    lastframe=gray
+                cv2.rectangle(frame,(xx[0],yy[0]),(xx[1],yy[1]),color, 1)
 
     _,jpeg = cv2.imencode('.jpg', frame)
 
     return Response(jpeg.tobytes(),mimetype="image/jpeg")
+
+
+def predict(frame):
+
+    #frame = cv2.resize(frame,(64,48))
+    _,jpeg= cv2.imencode(".jpg", frame)
+
+    req = urllib.request.Request(
+        url,
+        jpeg.tobytes(),
+        method="POST",
+        headers={"Content-Type": "application/octet-stream"},
+    )
+
+    response = urllib.request.urlopen(req)
+    json_str = response.read()
+    response.close()
+
+    j = json.loads(json_str)
+
+    return j["prob"]
+
 
 
 if __name__ == '__main__':
@@ -83,5 +116,6 @@ if __name__ == '__main__':
     load_dotenv()
 
     cam=MyCamera(os.getenv("CAMERA_SRV"))
+    url=os.getenv("PREDICT_URL")
 
     app.run(host='0.0.0.0', debug=False,threaded=True,port=myport)
